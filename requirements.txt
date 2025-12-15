@@ -6,3 +6,8 @@ pandas
 numpy
 scikit-learn
 rapidfuzz
+streamlit
+pandas
+numpy
+openpyxl
+xlsxwriter
