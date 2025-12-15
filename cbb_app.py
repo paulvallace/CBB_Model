@@ -14,16 +14,6 @@ import openpyxl
 from typing import Optional
 
 
-def find_latest_predictions_file(search_dir: str) -> Optional[str]:
-    """Find the newest predictions_*.xlsx in search_dir (non-recursive)."""
-    pattern = os.path.join(search_dir, "predictions_*.xlsx")
-    candidates = glob.glob(pattern)
-    if not candidates:
-        return None
-    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return candidates[0]
-
-
 def write_df_to_sheet(wb_path: str, df: pd.DataFrame, sheet_name: str = "Input Games") -> str:
     """Write df into wb_path at sheet_name (or fallback to 'Import Games'). Returns output path."""
     # Load workbook
@@ -140,13 +130,13 @@ def script_exists(path: str) -> bool:
 
 # --- Locate scripts (assumes app.py is in same folder as your .py files) ---
 WORKDIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATE_XLSX_DEFAULT = os.path.join(WORKDIR, 'Model_Results.xlsx')
+TEMPLATE_XLSX_DEFAULT = 'Model_Results.xlsx'
 
 SCRIPTS = {
-    "KenPom scrape (yesterday)": os.path.join(WORKDIR, "kenpom_automate.py"),
-    "Past games (OddsShark) update": os.path.join(WORKDIR, "past_games_automate.py"),
-    "GameDay matchups file": os.path.join(WORKDIR, "gameday.py"),
-    "Train + Predict today": os.path.join(WORKDIR, "train_model.py"),
+    "KenPom scrape (yesterday)": "kenpom_automate.py",
+    "Past games (OddsShark) update": "past_games_automate.py",
+    "GameDay matchups file":  "gameday.py",
+    "Train + Predict today":  "train_model.py",
 }
 
 with st.sidebar:
@@ -251,33 +241,6 @@ if run_all:
             st.warning("Stopped pipeline because a step failed (toggle this off in the sidebar to continue anyway).")
             break
 
-
-    # --- Optional: write predictions into the results workbook ---
-    ran_train = any(step_name == "Train + Predict" for step_name, _, _ in selected_steps)
-    if ran_train:
-        latest_pred = find_latest_predictions_file(WORKDIR)
-        if latest_pred is None:
-            st.warning("Train step ran, but I couldn't find a `predictions_*.xlsx` file to export.")
-        else:
-            try:
-                pred_df = pd.read_excel(latest_pred)
-                if pred_df.empty:
-                    st.warning(f"Found `{os.path.basename(latest_pred)}`, but it appears empty.")
-                elif not os.path.exists(template_xlsx_path):
-                    st.warning(f"Couldn't find results workbook at: {template_xlsx_path}")
-                else:
-                    out_wb = write_df_to_sheet(template_xlsx_path, pred_df, sheet_name="Input Games")
-                    st.success(f"✅ Wrote {len(pred_df):,} predictions into 'Input Games' (saved a new copy).")
-                    with open(out_wb, "rb") as f:
-                        st.download_button(
-                            "⬇️ Download updated Model_Results workbook",
-                            data=f.read(),
-                            file_name=os.path.basename(out_wb),
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True,
-                        )
-            except Exception as e:
-                st.error(f"Failed to export predictions into workbook: {e}")
 
     # Download logs
     st.divider()
