@@ -6,6 +6,58 @@ from datetime import date, timedelta, datetime
 
 import streamlit as st
 
+import glob
+import pandas as pd
+import openpyxl
+
+
+from typing import Optional
+
+
+def find_latest_predictions_file(search_dir: str) -> Optional[str]:
+    """Find the newest predictions_*.xlsx in search_dir (non-recursive)."""
+    pattern = os.path.join(search_dir, "predictions_*.xlsx")
+    candidates = glob.glob(pattern)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return candidates[0]
+
+
+def write_df_to_sheet(wb_path: str, df: pd.DataFrame, sheet_name: str = "Input Games") -> str:
+    """Write df into wb_path at sheet_name (or fallback to 'Import Games'). Returns output path."""
+    # Load workbook
+    wb = openpyxl.load_workbook(wb_path)
+    target = sheet_name
+    if target not in wb.sheetnames:
+        if "Import Games" in wb.sheetnames:
+            target = "Import Games"
+        else:
+            wb.create_sheet(sheet_name)
+            target = sheet_name
+
+    ws = wb[target]
+
+    # Clear existing values (keep formatting as much as possible)
+    if ws.max_row and ws.max_row > 1:
+        ws.delete_rows(1, ws.max_row)
+
+    # Write header
+    for c, col in enumerate(df.columns, start=1):
+        ws.cell(row=1, column=c, value=col)
+
+    # Write data rows
+    for r_idx, row in enumerate(df.itertuples(index=False), start=2):
+        for c_idx, val in enumerate(row, start=1):
+            ws.cell(row=r_idx, column=c_idx, value=val)
+
+    # Save to a new file so the original stays intact
+    base_dir = os.path.dirname(wb_path)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    out_path = os.path.join(base_dir, f"Model_Results_with_predictions_{stamp}.xlsx")
+    wb.save(out_path)
+    return out_path
+
 
 st.set_page_config(page_title="CBB Pipeline Runner", layout="wide")
 
@@ -88,6 +140,7 @@ def script_exists(path: str) -> bool:
 
 # --- Locate scripts (assumes app.py is in same folder as your .py files) ---
 WORKDIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_XLSX_DEFAULT = os.path.join(WORKDIR, 'Model_Results.xlsx')
 
 SCRIPTS = {
     "KenPom scrape (yesterday)": os.path.join(WORKDIR, "kenpom_automate.py"),
@@ -132,6 +185,11 @@ with st.sidebar:
 
     st.divider()
     stop_on_fail = st.checkbox("Stop pipeline if a step fails", value=True)
+    template_xlsx_path = st.text_input(
+        "Results workbook path (will write to 'Input Games')",
+        value=TEMPLATE_XLSX_DEFAULT,
+        help="Set to your Model_Results.xlsx (keeps original; saves a new copy with predictions).",
+    )
 
 # --- Validate script files are present ---
 missing = [name for name, path in SCRIPTS.items() if not script_exists(path)]
@@ -192,6 +250,34 @@ if run_all:
         if rc != 0 and stop_on_fail:
             st.warning("Stopped pipeline because a step failed (toggle this off in the sidebar to continue anyway).")
             break
+
+
+    # --- Optional: write predictions into the results workbook ---
+    ran_train = any(step_name == "Train + Predict" for step_name, _, _ in selected_steps)
+    if ran_train:
+        latest_pred = find_latest_predictions_file(WORKDIR)
+        if latest_pred is None:
+            st.warning("Train step ran, but I couldn't find a `predictions_*.xlsx` file to export.")
+        else:
+            try:
+                pred_df = pd.read_excel(latest_pred)
+                if pred_df.empty:
+                    st.warning(f"Found `{os.path.basename(latest_pred)}`, but it appears empty.")
+                elif not os.path.exists(template_xlsx_path):
+                    st.warning(f"Couldn't find results workbook at: {template_xlsx_path}")
+                else:
+                    out_wb = write_df_to_sheet(template_xlsx_path, pred_df, sheet_name="Input Games")
+                    st.success(f"✅ Wrote {len(pred_df):,} predictions into 'Input Games' (saved a new copy).")
+                    with open(out_wb, "rb") as f:
+                        st.download_button(
+                            "⬇️ Download updated Model_Results workbook",
+                            data=f.read(),
+                            file_name=os.path.basename(out_wb),
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                        )
+            except Exception as e:
+                st.error(f"Failed to export predictions into workbook: {e}")
 
     # Download logs
     st.divider()
