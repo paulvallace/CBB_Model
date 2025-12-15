@@ -7,6 +7,28 @@ from sklearn.metrics import accuracy_score, classification_report
 from datetime import datetime
 import re
 from rapidfuzz import process, fuzz
+from pathlib import Path
+import os
+
+# --- Portable paths (works on Mac/Windows/Linux/GitHub) ---
+BASE_DIR = Path(__file__).resolve().parent          # folder that contains CBB_Model.py
+REPO_DIR = BASE_DIR                                 # adjust if CBB_Model.py is inside a subfolder
+
+DATA_DIR = REPO_DIR / "data"
+OUTPUT_DIR = REPO_DIR / "outputs"
+
+# Make sure folders exist
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def p(*parts: str) -> Path:
+    """Join paths relative to the repo directory."""
+    return REPO_DIR.joinpath(*parts)
+
+def env_path(env_name: str, default: Path) -> Path:
+    """Allow overriding paths with env vars in GitHub/Streamlit."""
+    val = os.environ.get(env_name)
+    return Path(val) if val else default
 
 # ======================================================
 # TEAM NAME NORMALIZATION AND STANDARDIZATION
@@ -226,8 +248,10 @@ def parse_date(date_str):
 
 def prepare_data():
     # Load the data
-    games_df = pd.read_csv('/Users/PaulVallace/Desktop/College Basketball/historical data/Past Games/historical_games.csv')
-    kenpom_df = pd.read_excel('/Users/PaulVallace/Desktop/College Basketball/historical data/Kenpom/historical_kenpom.xlsx')
+    HISTORICAL_GAMES_CSV = env_path("HISTORICAL_GAMES_CSV", DATA_DIR / "historical_games.csv")
+    games_df = pd.read_csv(HISTORICAL_GAMES_CSV)
+
+    kenpom_df = pd.read_excel('historical_kenpom.xlsx')
     
     # Add diagnostic counters
     total_games = len(games_df)
